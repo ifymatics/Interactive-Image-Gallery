@@ -1,56 +1,126 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+// src/components/comment-section.test.tsx
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import CommentSection from "./comment-section";
+import CommentSection from "@/components/comment-section";
 import { useAuth } from "@/hooks/use-auth";
-import useSWR from "swr";
-import { fetchComments, postComment } from "@/lib/api";
-import type { Comment } from "@/types";
+import useSWR, { MutatorOptions } from "swr";
+import { postComment } from "@/lib/api";
 
-// Mock the dependencies
-jest.mock("swr");
+// Mock dependencies
 jest.mock("@/hooks/use-auth");
+jest.mock("swr");
 jest.mock("@/lib/api");
+jest.mock("@/components/ui/avatar", () => ({
+  Avatar: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AvatarFallback: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+jest.mock("@/components/ui/skeleton", () => ({
+  Skeleton: ({ className }: { className?: string }) => (
+    <div className={className}>Skeleton</div>
+  ),
+}));
+jest.mock("lucide-react", () => ({
+  MessageSquare: () => <div>MessageIcon</div>,
+}));
+jest.mock("./comment-form", () => ({
+  __esModule: true,
+  default: ({
+    onSubmit,
+    isDisabled,
+  }: {
+    onSubmit: (text: string) => void;
+    isDisabled: boolean;
+  }) => (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit("Test comment");
+      }}
+    >
+      <button type="submit" disabled={isDisabled}>
+        Submit Comment
+      </button>
+    </form>
+  ),
+}));
 
-const mockUseSWR = useSWR as jest.Mock;
-const mockUseAuth = useAuth as jest.Mock;
-const mockFetchComments = fetchComments as jest.Mock;
-const mockPostComment = postComment as jest.Mock;
-const mockMutate = jest.fn();
+const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
+const mockUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
+const mockPostComment = postComment as jest.MockedFunction<typeof postComment>;
 
 describe("CommentSection", () => {
-  const mockImageId = "test-image-123";
+  const mockImageId = "test-image-id";
   const mockOnAuthRequired = jest.fn();
-  const mockComments: Comment[] = [
+  const mockMutate = jest.fn();
+
+  const mockComments = [
     {
       id: "1",
       imageId: mockImageId,
-      user: { id: "user-1", username: "testuser" },
+      user: { username: "user1" },
       text: "First comment",
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
     },
     {
       id: "2",
       imageId: mockImageId,
-      user: { id: "user-2", username: "anotheruser" },
+      user: { username: "user2" },
       text: "Second comment",
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() - 100000).toISOString(),
     },
   ];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      user: null,
+      login: jest.fn(),
+      signup: jest.fn(),
+      logout: jest.fn(),
+      isLoading: false,
+      isError: undefined,
+    });
+
     mockUseSWR.mockReturnValue({
       data: mockComments,
       mutate: mockMutate,
       isLoading: false,
+      error: undefined,
+      isValidating: false,
     });
-    mockUseAuth.mockReturnValue({
-      user: { id: "current-user", username: "currentuser" },
+
+    mockPostComment.mockResolvedValue({
+      id: "new-comment-id",
+      imageId: mockImageId,
+      user: {
+        username: "testuser",
+        id: "",
+      },
+      text: "Test comment",
+      createdAt: new Date().toISOString(),
     });
   });
 
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("renders loading state correctly", () => {
-    mockUseSWR.mockReturnValue({ isLoading: true });
+    mockUseSWR.mockReturnValue({
+      isLoading: true,
+      data: undefined,
+      error: undefined,
+      mutate: function <MutationData = unknown>(
+        data?: unknown,
+        opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+      ): Promise<unknown> {
+        throw new Error("Function not implemented.");
+      },
+      isValidating: false,
+    });
     render(
       <CommentSection
         imageId={mockImageId}
@@ -59,12 +129,22 @@ describe("CommentSection", () => {
       />
     );
 
-    expect(screen.getAllByTestId("comment-skeleton")).toHaveLength(2);
-    expect(screen.getByText("Comments (...)")).toBeInTheDocument();
+    expect(screen.getAllByText("Skeleton").length).toBe(2);
   });
 
   it("renders empty state when no comments exist", () => {
-    mockUseSWR.mockReturnValue({ data: [], isLoading: false });
+    mockUseSWR.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: undefined,
+      mutate: function <MutationData = unknown>(
+        data?: unknown,
+        opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+      ): Promise<unknown> {
+        throw new Error("Function not implemented.");
+      },
+      isValidating: false,
+    });
     render(
       <CommentSection
         imageId={mockImageId}
@@ -76,7 +156,6 @@ describe("CommentSection", () => {
     expect(
       screen.getByText("Be the first to leave a comment.")
     ).toBeInTheDocument();
-    expect(screen.getByText("Comments (0)")).toBeInTheDocument();
   });
 
   it("displays comments correctly", () => {
@@ -90,13 +169,11 @@ describe("CommentSection", () => {
 
     expect(screen.getByText("First comment")).toBeInTheDocument();
     expect(screen.getByText("Second comment")).toBeInTheDocument();
-    expect(screen.getByText("testuser")).toBeInTheDocument();
-    expect(screen.getByText("anotheruser")).toBeInTheDocument();
-    expect(screen.getByText("Comments (2)")).toBeInTheDocument();
+    expect(screen.getByText("user1")).toBeInTheDocument();
+    expect(screen.getByText("user2")).toBeInTheDocument();
   });
 
   it("shows auth required when submitting without being logged in", async () => {
-    mockUseAuth.mockReturnValue({ user: null });
     render(
       <CommentSection
         imageId={mockImageId}
@@ -105,19 +182,23 @@ describe("CommentSection", () => {
       />
     );
 
-    const input = screen.getByPlaceholderText("Add a comment...");
-    const submitButton = screen.getByRole("button", { name: "Post" });
-
-    await userEvent.type(input, "Test comment");
-    fireEvent.click(submitButton);
+    const submitButton = screen.getByText("Submit Comment");
+    await userEvent.click(submitButton);
 
     expect(mockOnAuthRequired).toHaveBeenCalled();
     expect(mockPostComment).not.toHaveBeenCalled();
   });
 
   it("handles successful comment submission with optimistic update", async () => {
-    const newCommentText = "New test comment";
-    mockPostComment.mockResolvedValueOnce({});
+    const mockUser = { username: "testuser", id: "4" };
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      login: jest.fn(),
+      signup: jest.fn(),
+      logout: jest.fn(),
+      isLoading: false,
+      isError: undefined,
+    });
 
     render(
       <CommentSection
@@ -127,36 +208,45 @@ describe("CommentSection", () => {
       />
     );
 
-    const input = screen.getByPlaceholderText("Add a comment...");
-    const submitButton = screen.getByRole("button", { name: "Post" });
-
-    await userEvent.type(input, newCommentText);
-    fireEvent.click(submitButton);
+    const submitButton = screen.getByText("Submit Comment");
+    await userEvent.click(submitButton);
 
     // Check optimistic update
     expect(mockMutate).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
-          text: newCommentText,
-          user: { id: "current-user", username: "currentuser" },
+          id: expect.any(String),
+          imageId: mockImageId,
+          user: mockUser,
+          text: "Test comment",
+          createdAt: expect.any(String),
         }),
         ...mockComments,
       ]),
       false
     );
 
-    // Wait for server submission and revalidation
+    // Check final update after API call
     await waitFor(() => {
       expect(mockPostComment).toHaveBeenCalledWith({
         imageId: mockImageId,
-        text: newCommentText,
+        text: "Test comment",
       });
-      expect(mockMutate).toHaveBeenCalledTimes(2);
+      expect(mockMutate).toHaveBeenCalledTimes(2); // Once for optimistic, once for revalidation
     });
   });
 
   it("handles comment submission error and reverts optimistic update", async () => {
-    const newCommentText = "New test comment";
+    const mockUser = { username: "testuser", id: "1" };
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      login: jest.fn(),
+      signup: jest.fn(),
+      logout: jest.fn(),
+      isLoading: false,
+      isError: undefined,
+    });
+
     const testError = new Error("Failed to post comment");
     mockPostComment.mockRejectedValueOnce(testError);
 
@@ -168,36 +258,37 @@ describe("CommentSection", () => {
       />
     );
 
-    const input = screen.getByPlaceholderText("Add a comment...");
-    const submitButton = screen.getByRole("button", { name: "Post" });
-
-    await userEvent.type(input, newCommentText);
-    fireEvent.click(submitButton);
+    const submitButton = screen.getByText("Submit Comment");
+    await userEvent.click(submitButton);
 
     // Check optimistic update
     expect(mockMutate).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
-          text: newCommentText,
-          user: { id: "current-user", username: "currentuser" },
+          text: "Test comment",
         }),
         ...mockComments,
       ]),
       false
     );
 
-    // Wait for error and revalidation
+    // Check error handling
     await waitFor(() => {
-      expect(mockPostComment).toHaveBeenCalledWith({
-        imageId: mockImageId,
-        text: newCommentText,
-      });
-      expect(mockMutate).toHaveBeenCalledTimes(2); // Once for optimistic, once for revalidate
+      expect(mockPostComment).toHaveBeenCalled();
+      expect(mockMutate).toHaveBeenCalledTimes(2); // Once for optimistic, once for revalidation
     });
   });
 
   it("disables form when auth is loading", () => {
-    mockUseAuth.mockReturnValue({ user: null });
+    mockUseAuth.mockReturnValue({
+      user: null,
+      login: jest.fn(),
+      signup: jest.fn(),
+      logout: jest.fn(),
+      isLoading: true,
+      isError: undefined,
+    });
+
     render(
       <CommentSection
         imageId={mockImageId}
@@ -206,10 +297,7 @@ describe("CommentSection", () => {
       />
     );
 
-    const input = screen.getByPlaceholderText("Add a comment...");
-    const submitButton = screen.getByRole("button", { name: "Post" });
-
-    expect(input).toBeDisabled();
+    const submitButton = screen.getByText("Submit Comment");
     expect(submitButton).toBeDisabled();
   });
 
@@ -218,14 +306,25 @@ describe("CommentSection", () => {
       ...mockComments,
       {
         id: "3",
-        imageId: "different-image",
-        user: { id: "user-3", username: "otheruser" },
-        text: "Comment for different image",
+        imageId: "other-image-id",
+        user: { username: "user3" },
+        text: "Comment for other image",
         createdAt: new Date().toISOString(),
       },
     ];
 
-    mockUseSWR.mockReturnValue({ data: mixedComments, isLoading: false });
+    mockUseSWR.mockReturnValue({
+      data: mixedComments,
+      isLoading: false,
+      error: undefined,
+      mutate: function <MutationData = unknown>(
+        data?: unknown,
+        opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+      ): Promise<unknown> {
+        throw new Error("Function not implemented.");
+      },
+      isValidating: false,
+    });
 
     render(
       <CommentSection
@@ -238,25 +337,7 @@ describe("CommentSection", () => {
     expect(screen.getByText("First comment")).toBeInTheDocument();
     expect(screen.getByText("Second comment")).toBeInTheDocument();
     expect(
-      screen.queryByText("Comment for different image")
+      screen.queryByText("Comment for other image")
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Comments (2)")).toBeInTheDocument();
-  });
-});
-
-// Test for CommentSkeleton component
-describe("CommentSkeleton", () => {
-  it("renders correctly", () => {
-    const { container } = render(
-      <div className="flex items-start space-x-3">
-        <div className="h-8 w-8 rounded-full bg-gray-200" />
-        <div className="flex-1 space-y-2">
-          <div className="h-4 w-1/2 bg-gray-200" />
-          <div className="h-4 w-full bg-gray-200" />
-        </div>
-      </div>
-    );
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

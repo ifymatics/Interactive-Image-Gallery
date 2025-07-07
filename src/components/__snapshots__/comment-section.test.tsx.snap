@@ -1,0 +1,21 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`CommentSkeleton renders correctly 1`] = `
+<div
+  class="flex items-start space-x-3"
+>
+  <div
+    class="h-8 w-8 rounded-full bg-gray-200"
+  />
+  <div
+    class="flex-1 space-y-2"
+  >
+    <div
+      class="h-4 w-1/2 bg-gray-200"
+    />
+    <div
+      class="h-4 w-full bg-gray-200"
+    />
+  </div>
+</div>
+`;

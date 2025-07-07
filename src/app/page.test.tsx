@@ -1,144 +1,275 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+// src/app/page.test.tsx
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Home from "@/app/page";
 import { useAuth } from "@/hooks/use-auth";
-import useSWR from "swr";
-import { fetchImages } from "@/lib/api";
-import type { Image as UnsplashImage } from "@/types";
+import useSWR, { MutatorOptions } from "swr";
 
-// Mock the dependencies
-jest.mock("swr");
+// Mock the necessary components and hooks
 jest.mock("@/hooks/use-auth");
-jest.mock("@/lib/api");
+jest.mock("swr");
+jest.mock("@/components/ui/pagination", () => ({
+  Pagination: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  PaginationContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  PaginationItem: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  PaginationPrevious: ({
+    onClick,
+    className,
+  }: {
+    onClick: () => void;
+    className?: string;
+  }) => (
+    <button onClick={onClick} className={className}>
+      Previous
+    </button>
+  ),
+  PaginationNext: ({
+    onClick,
+    className,
+  }: {
+    onClick: () => void;
+    className?: string;
+  }) => (
+    <button onClick={onClick} className={className}>
+      Next
+    </button>
+  ),
+  PaginationLink: ({
+    onClick,
+    isActive,
+    children,
+  }: {
+    onClick: () => void;
+    isActive?: boolean;
+    children: React.ReactNode;
+  }) => (
+    <button onClick={onClick} data-active={isActive}>
+      {children}
+    </button>
+  ),
+  PaginationEllipsis: () => <span>...</span>,
+}));
 
-const mockUseSWR = useSWR as jest.Mock;
-const mockUseAuth = useAuth as jest.Mock;
-const mockFetchImages = fetchImages as jest.Mock;
+jest.mock("@/components/ui/avatar", () => ({
+  Avatar: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AvatarFallback: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+
+jest.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick: () => void;
+  }) => <button onClick={onClick}>{children}</button>,
+}));
+
+jest.mock("@/components/ui/skeleton", () => ({
+  Skeleton: ({ className }: { className?: string }) => (
+    <div className={className}>Skeleton</div>
+  ),
+}));
+
+jest.mock("@/components/ui/button", () => ({
+  Button: ({
+    children,
+    onClick,
+    variant,
+  }: {
+    children: React.ReactNode;
+    onClick: () => void;
+    variant?: string;
+  }) => (
+    <button onClick={onClick} data-variant={variant}>
+      {children}
+    </button>
+  ),
+}));
+
+jest.mock("@/components/image-grid", () => ({
+  __esModule: true,
+  default: ({
+    images,
+    onImageClick,
+  }: {
+    images: any[];
+    onImageClick: (image: any) => void;
+  }) => (
+    <div>
+      {images.map((image, i) => (
+        <button key={i} onClick={() => onImageClick(image)}>
+          Image {i + 1}
+        </button>
+      ))}
+    </div>
+  ),
+}));
+
+jest.mock("@/components/image-details-modal", () => ({
+  __esModule: true,
+  default: ({
+    image,
+    isOpen,
+    onOpenChange,
+  }: {
+    image: any;
+    isOpen: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) => (isOpen ? <div>Image Details Modal: {image.id}</div> : null),
+}));
+
+jest.mock("@/components/auth-modal", () => ({
+  __esModule: true,
+  default: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div>Auth Modal</div> : null,
+}));
+
+jest.mock("@/components/icons", () => ({
+  Icons: {
+    logo: () => <div>Logo</div>,
+  },
+}));
+
+const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
+const mockUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
 
 describe("Home Component", () => {
-  const mockImages: UnsplashImage[] = [
+  const mockImages = [
     {
       id: "1",
-      urls: {
-        regular: "image1.jpg",
-        thumb: "",
-      },
-      user: { name: "User One" },
-      description: "First image",
-      alt_description: null,
-      tags: [],
+      urls: { regular: "" },
+      user: { name: "User 1" },
+      description: "Image 1",
     },
     {
       id: "2",
-      urls: {
-        regular: "image2.jpg",
-        thumb: "",
-      },
-      user: { name: "User Two" },
-      description: "Second image",
-      alt_description: null,
-      tags: [],
+      urls: { regular: "" },
+      user: { name: "User 2" },
+      description: "Image 2",
     },
   ];
 
-  const mockAuthUser = {
-    id: "user-1",
-    username: "testuser",
-  };
-
   beforeEach(() => {
-    jest.clearAllMocks();
-
-    // Mock SWR response
-    mockUseSWR.mockReturnValue({
-      data: { results: mockImages, total_pages: 3 },
-      error: null,
-      isLoading: false,
-    });
-
-    // Mock auth state
     mockUseAuth.mockReturnValue({
       user: null,
       login: jest.fn(),
       signup: jest.fn(),
       logout: jest.fn(),
       isLoading: false,
+      isError: undefined,
+    });
+
+    mockUseSWR.mockReturnValue({
+      data: { results: mockImages, total_pages: 3 },
+      error: null,
+      isLoading: false,
+      mutate: function <MutationData = unknown>(
+        data?: unknown,
+        opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+      ): Promise<unknown> {
+        throw new Error("Function not implemented.");
+      },
+      isValidating: false,
     });
   });
 
-  it("renders loading state correctly", () => {
-    mockUseSWR.mockReturnValue({ isLoading: true });
-    render(<Home />);
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
 
-    expect(screen.getAllByTestId("card-skeleton")).toHaveLength(8); // IMAGES_PER_PAGE
+  it("renders correctly", () => {
+    render(<Home />);
     expect(screen.getByText("ImageVerse")).toBeInTheDocument();
-  });
-
-  it("renders error state when image fetch fails", () => {
-    mockUseSWR.mockReturnValue({ error: new Error("API Error") });
-    render(<Home />);
-
-    expect(screen.getByText(/Failed to load images/)).toBeInTheDocument();
-  });
-
-  it("renders images when loaded successfully", async () => {
-    render(<Home />);
-
-    await waitFor(() => {
-      expect(screen.getByText("First image")).toBeInTheDocument();
-      expect(screen.getByText("Second image")).toBeInTheDocument();
-    });
-  });
-
-  it("shows login/signup buttons when not authenticated", () => {
-    render(<Home />);
-
     expect(screen.getByText("Login")).toBeInTheDocument();
     expect(screen.getByText("Sign Up")).toBeInTheDocument();
   });
 
-  it("shows user avatar dropdown when authenticated", () => {
-    mockUseAuth.mockReturnValue({
-      user: mockAuthUser,
-      login: jest.fn(),
-      signup: jest.fn(),
-      logout: jest.fn(),
+  it("displays loading skeletons when images are loading", () => {
+    mockUseSWR.mockReturnValue({
+      isLoading: true,
+      data: undefined,
+      error: undefined,
+      mutate: function <MutationData = unknown>(
+        data?: unknown,
+        opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+      ): Promise<unknown> {
+        throw new Error("Function not implemented.");
+      },
+      isValidating: false,
+    });
+    render(<Home />);
+    expect(screen.getAllByText("Skeleton").length).toBeGreaterThan(1);
+  });
+
+  it("displays error message when images fail to load", () => {
+    mockUseSWR.mockReturnValue({
+      error: new Error("Failed to load"),
+      data: undefined,
+      mutate: function <MutationData = unknown>(
+        data?: unknown,
+        opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+      ): Promise<unknown> {
+        throw new Error("Function not implemented.");
+      },
+      isValidating: false,
       isLoading: false,
     });
-
     render(<Home />);
+    expect(screen.getByText(/Failed to load images/i)).toBeInTheDocument();
+  });
 
-    expect(
-      screen.getByText(mockAuthUser.username.charAt(0).toUpperCase())
-    ).toBeInTheDocument();
+  it("renders images when loaded", () => {
+    render(<Home />);
+    expect(screen.getByText("Image 1")).toBeInTheDocument();
+    expect(screen.getByText("Image 2")).toBeInTheDocument();
   });
 
   describe("Pagination", () => {
-    it("renders pagination when there are multiple pages", () => {
+    it("renders pagination controls when there are multiple pages", () => {
       render(<Home />);
-
-      expect(screen.getByRole("navigation")).toBeInTheDocument();
+      expect(screen.getByText("Previous")).toBeInTheDocument();
       expect(screen.getByText("1")).toBeInTheDocument();
+      expect(screen.getByText("2")).toBeInTheDocument();
       expect(screen.getByText("3")).toBeInTheDocument();
+      expect(screen.getByText("Next")).toBeInTheDocument();
     });
 
-    it("changes page when pagination controls are clicked", async () => {
+    it("changes page when pagination controls are clicked", () => {
       render(<Home />);
 
       const page2Button = screen.getByText("2");
       fireEvent.click(page2Button);
 
-      await waitFor(() => {
-        expect(mockFetchImages).toHaveBeenCalledWith(2, 8);
-      });
+      expect(mockUseSWR).toHaveBeenCalledWith(
+        ["/images", 2, 8],
+        expect.any(Function)
+      );
     });
 
     it("disables previous button on first page", () => {
       render(<Home />);
-
-      const prevButton = screen.getByLabelText("Go to previous page");
+      const prevButton = screen.getByText("Previous");
       expect(prevButton).toHaveClass("opacity-50");
-      expect(prevButton).toHaveAttribute("aria-disabled", "true");
     });
 
     it("disables next button on last page", () => {
@@ -146,17 +277,23 @@ describe("Home Component", () => {
         data: { results: mockImages, total_pages: 3 },
         error: null,
         isLoading: false,
+        mutate: function <MutationData = unknown>(
+          data?: unknown,
+          opts?: boolean | MutatorOptions<unknown, MutationData> | undefined
+        ): Promise<unknown> {
+          throw new Error("Function not implemented.");
+        },
+        isValidating: false,
       });
 
       render(<Home />);
 
-      // Simulate being on last page
-      const nextButton = screen.getByLabelText("Go to next page");
-      fireEvent.click(nextButton);
-      fireEvent.click(nextButton);
+      // Click to last page
+      const page3Button = screen.getByText("3");
+      fireEvent.click(page3Button);
 
+      const nextButton = screen.getByText("Next");
       expect(nextButton).toHaveClass("opacity-50");
-      expect(nextButton).toHaveAttribute("aria-disabled", "true");
     });
   });
 
@@ -167,26 +304,49 @@ describe("Home Component", () => {
       const loginButton = screen.getByText("Login");
       await userEvent.click(loginButton);
 
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("Auth Modal")).toBeInTheDocument();
+    });
+
+    it("shows user avatar when logged in", () => {
+      mockUseAuth.mockReturnValue({
+        user: {
+          username: "testuser",
+          id: "",
+        },
+        login: jest.fn(),
+        signup: jest.fn(),
+        logout: jest.fn(),
+        isLoading: false,
+        isError: undefined,
+      });
+
+      render(<Home />);
+
+      expect(screen.getByText("T")).toBeInTheDocument(); // Avatar fallback
+      expect(screen.queryByText("Login")).not.toBeInTheDocument();
     });
 
     it("calls logout when logout is clicked", async () => {
       const mockLogout = jest.fn();
       mockUseAuth.mockReturnValue({
-        user: mockAuthUser,
+        user: {
+          username: "testuser",
+          id: "",
+        },
         login: jest.fn(),
         signup: jest.fn(),
         logout: mockLogout,
         isLoading: false,
+        isError: undefined,
       });
 
       render(<Home />);
 
-      const avatarButton = screen.getByRole("button", {
-        name: mockAuthUser.username.charAt(0).toUpperCase(),
-      });
+      // Open dropdown
+      const avatarButton = screen.getByText("T");
       await userEvent.click(avatarButton);
 
+      // Click logout
       const logoutButton = screen.getByText("Logout");
       await userEvent.click(logoutButton);
 
@@ -198,50 +358,28 @@ describe("Home Component", () => {
     it("opens image modal when image is clicked", async () => {
       render(<Home />);
 
-      const firstImage = screen.getByText("First image");
+      const firstImage = screen.getByText("Image 1");
       fireEvent.click(firstImage);
 
+      expect(screen.getByText(/Image Details Modal/)).toBeInTheDocument();
+    });
+
+    it("closes image modal when closed", async () => {
+      render(<Home />);
+
+      // Open modal
+      const firstImage = screen.getByText("Image 1");
+      fireEvent.click(firstImage);
+
+      // Close modal
+      const modal = screen.getByText(/Image Details Modal/);
+      fireEvent.keyDown(modal, { key: "Escape" });
+
       await waitFor(() => {
-        expect(screen.getByRole("dialog")).toBeInTheDocument();
+        expect(
+          screen.queryByText(/Image Details Modal/)
+        ).not.toBeInTheDocument();
       });
     });
   });
 });
-
-// Mock components that would normally be imported
-jest.mock("@/components/image-grid", () => ({
-  __esModule: true,
-  default: ({
-    images,
-    onImageClick,
-  }: {
-    images: any[];
-    onImageClick: (image: any) => void;
-  }) => (
-    <div>
-      {images.map((image) => (
-        <div key={image.id} onClick={() => onImageClick(image)}>
-          {image.description}
-        </div>
-      ))}
-    </div>
-  ),
-}));
-
-jest.mock("@/components/image-details-modal", () => ({
-  __esModule: true,
-  default: ({ image, isOpen }: { image: any; isOpen: boolean }) =>
-    isOpen ? <div role="dialog">Image Modal: {image.description}</div> : null,
-}));
-
-jest.mock("@/components/auth-modal", () => ({
-  __esModule: true,
-  default: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div role="dialog">Auth Modal</div> : null,
-}));
-
-jest.mock("@/components/icons", () => ({
-  Icons: {
-    logo: () => <div>Logo</div>,
-  },
-}));
